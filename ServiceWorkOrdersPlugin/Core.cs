@@ -1,7 +1,7 @@
 ﻿/*
 The MIT License (MIT)
 
-Copyright (c) 2007 - 2020 Microting A/S
+Copyright (c) 2007 - 2021 Microting A/S
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -85,15 +85,22 @@ namespace ServiceWorkOrdersPlugin
 
         public void CaseCompleted(object sender, EventArgs args)
         {
-            CaseDto trigger = (CaseDto)sender;
-
-            if (trigger.MicrotingUId != null && trigger.CheckUId != null)
+            try
             {
-                int caseId = (int)trigger.MicrotingUId;
-                int checkListId = (int)trigger.CheckListId;
-                int checkUId = (int) trigger.CheckUId;
-                int siteId = (int) trigger.SiteUId;
-                _bus.SendLocal(new eFormCompleted(caseId, checkListId, checkUId, siteId));
+                CaseDto trigger = (CaseDto) sender;
+
+                if (trigger.MicrotingUId != null && trigger.CheckUId != null)
+                {
+                    int caseId = (int) trigger.MicrotingUId;
+                    int checkListId = (int) trigger.CheckListId;
+                    int checkUId = (int) trigger.CheckUId;
+                    int siteId = (int) trigger.SiteUId;
+                    _bus.SendLocal(new eFormCompleted(caseId, checkListId, checkUId, siteId));
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERR] ServiceWorkOrdersPlugin.CaseCompleted: Got the following error: {ex.Message}");
             }
         }
 
@@ -112,22 +119,12 @@ namespace ServiceWorkOrdersPlugin
             Console.WriteLine("ServiceWorkOrdersPlugin start called");
             try
             {
-                string dbNameSection;
-                string dbPrefix;
-                if (sdkConnectionString.ToLower().Contains("convert zero datetime"))
-                {
-                    dbNameSection = Regex.Match(sdkConnectionString, @"(Database=\w*;)").Groups[0].Value;
-                    dbPrefix = Regex.Match(sdkConnectionString, @"Database=(\d*)_").Groups[1].Value;
-                }
-                else
-                {
-                    dbNameSection = Regex.Match(sdkConnectionString, @"(Initial Catalog=\w*;)").Groups[0].Value;
-                    dbPrefix = Regex.Match(sdkConnectionString, @"Initial Catalog=(\d*)_").Groups[1].Value;
-                }
+                var dbNameSection = Regex.Match(sdkConnectionString, @"(Database=\w*;)").Groups[0].Value;
+                var dbPrefix = Regex.Match(sdkConnectionString, @"Database=(\d*)_").Groups[1].Value;
 
-
-                string pluginDbName = $"Initial Catalog={dbPrefix}_eform-angular-work-orders-plugin;";
-                string connectionString = sdkConnectionString.Replace(dbNameSection, pluginDbName);
+                var pluginDbName = $"Initial Catalog={dbPrefix}_eform-angular-work-orders-plugin;";
+                var connectionString = sdkConnectionString.Replace(dbNameSection, pluginDbName);
+                string rabbitmqHost = connectionString.Contains("frontend") ? $"frontend-{dbPrefix}-rabbitmq" :"localhost";
 
 
                 if (!_coreAvailable && !_coreStatChanging)
@@ -167,7 +164,7 @@ namespace ServiceWorkOrdersPlugin
                     _container.Register(Component.For<eFormCore.Core>().Instance(_sdkCore));
                     _container.Install(
                         new RebusHandlerInstaller()
-                        , new RebusInstaller(connectionString, _maxParallelism, _numberOfWorkers)
+                        , new RebusInstaller(connectionString, _maxParallelism, _numberOfWorkers, "admin", "password", rabbitmqHost)
                     );
 
                     _bus = _container.Resolve<IBus>();
